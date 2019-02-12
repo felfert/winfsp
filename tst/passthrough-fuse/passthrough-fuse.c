@@ -24,6 +24,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <memory.h>
 
 #include <fuse.h>
 
@@ -281,6 +282,35 @@ static int ptfs_chflags(const char *path, uint32_t flags)
 }
 #endif
 
+#if defined(_WIN64) || defined(_WIN32)
+static int ptfs_ioctl(const char *path, int cmd, void *arg,
+        struct fuse_file_info *fi, unsigned int flags, void *data)
+{
+    int len = (cmd & 0x03fff0000) >> 16;
+    printf("ptfs_ioctl path=\"%s\", cmd=0x%08x len=%d\n",
+            path ? path : "(null)", cmd, len);
+    uint8_t *tmp = (uint8_t *)malloc(len + 1);
+    uint8_t *p, *q, *endp;
+    memset(tmp, 0, len + 1);
+    memcpy(tmp, data, len);
+    printf("<data=\"%s\"\n", tmp);
+    for (p = (uint8_t *)data, q = tmp, endp = p + len; endp > p; p++, q++)
+    {
+        if (('A' <= *p && *p <= 'M') || ('a' <= *p && *p <= 'm'))
+            *q = *p + 13;
+        else
+            if (('N' <= *p && *p <= 'Z') || ('n' <= *p && *p <= 'z'))
+                *q = *p - 13;
+            else
+                *q = *p;
+    }
+    printf(">data=\"%s\"\n", tmp);
+    memcpy(data, tmp, len);
+    free(tmp);
+    return 0;
+}
+#endif
+
 static struct fuse_operations ptfs_ops =
 {
     .getattr = ptfs_getattr,
@@ -312,6 +342,7 @@ static struct fuse_operations ptfs_ops =
 #endif
 #if defined(_WIN64) || defined(_WIN32)
     .setcrtime = ptfs_setcrtime,
+    .ioctl = ptfs_ioctl,
 #endif
 #if defined(FSP_FUSE_USE_STAT_EX)
     .chflags = ptfs_chflags,
